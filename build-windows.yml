@@ -1,0 +1,53 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packager
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Download FFmpeg essentials
+        shell: pwsh
+        run: |
+          $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-package -Force
+          $ffmpeg = Get-ChildItem -Path ffmpeg-package -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $ffmpeg) { throw "Could not find ffmpeg.exe in downloaded package." }
+          Copy-Item $ffmpeg.FullName .\ffmpeg.exe -Force
+
+      - name: Build GUI executable
+        run: pyinstaller --noconfirm --clean --onefile --windowed --name MTS_MP4_Converter mts_to_mp4_gui.py
+
+      - name: Assemble portable folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path portable | Out-Null
+          Copy-Item dist\MTS_MP4_Converter.exe portable\
+          Copy-Item ffmpeg.exe portable\
+
+      - name: Zip portable app
+        shell: pwsh
+        run: Compress-Archive -Path portable\* -DestinationPath MTS_MP4_Converter_Windows.zip -Force
+
+      - name: Upload finished app
+        uses: actions/upload-artifact@v4
+        with:
+          name: MTS_MP4_Converter_Windows
+          path: MTS_MP4_Converter_Windows.zip
+          if-no-files-found: error
